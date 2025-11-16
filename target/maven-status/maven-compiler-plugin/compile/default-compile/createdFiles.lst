@@ -1,0 +1,4 @@
+com/devops/etudiants/EtudiantsApiApplication.class
+com/devops/etudiants/Etudiant.class
+com/devops/etudiants/EtudiantRepository.class
+com/devops/etudiants/EtudiantController.class
