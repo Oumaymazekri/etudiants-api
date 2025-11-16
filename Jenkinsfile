@@ -11,10 +11,10 @@ pipeline {
   stages {
 
     stage('Checkout') {
-      steps {
-        git 'https://github.com/Oumaymazekri/etudiants-api.git'
-      }
+    steps {
+        git branch: 'main', url: 'https://github.com/Oumaymazekri/etudiants-api.git'
     }
+}
 
     stage('Build') {
       steps {
