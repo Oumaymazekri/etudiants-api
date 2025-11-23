@@ -11,7 +11,7 @@ pipeline {
 
     IMAGE_NAME     = 'oumaymazekri/etudiants-api'
     IMAGE_TAG      = "v${env.BUILD_NUMBER}"
-    APP_PORT       = "8081"          // Port exposé sur l'hôte
+    APP_PORT       = "8081"
     DB_CONTAINER   = "postgres-etudiants"
     APP_CONTAINER  = "etudiants-api"
     NETWORK        = "etudiants-net"
@@ -28,10 +28,15 @@ pipeline {
     stage('Setup Docker Network & PostgreSQL') {
       steps {
         script {
+          // Crée le réseau si inexistant
           sh "docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}"
-          sh "docker rm -f ${DB_CONTAINER} || true"
-          sh "docker volume create ${DB_CONTAINER}-data || true"
 
+          // Supprimer l'ancien conteneur PostgreSQL et volume si nécessaire
+          sh "docker rm -f ${DB_CONTAINER} || true"
+          sh "docker volume rm ${DB_CONTAINER}-data || true"
+          sh "docker volume create ${DB_CONTAINER}-data"
+
+          // Lancer PostgreSQL
           sh """
             docker run -d --name ${DB_CONTAINER} \
               --network ${NETWORK} \
@@ -43,9 +48,10 @@ pipeline {
               postgres:15
           """
 
+          // Attendre que PostgreSQL soit prêt
           sh '''
             echo "⏳ Waiting for PostgreSQL to become ready..."
-            until docker exec postgres-etudiants pg_isready -U etudiants -d etudiantsdb; do
+            until docker exec ${DB_CONTAINER} pg_isready -U etudiants -d etudiantsdb; do
               sleep 2
             done
             echo "🔥 PostgreSQL is READY!"
@@ -95,8 +101,10 @@ pipeline {
     stage('Deployment') {
       steps {
         script {
+          // Supprimer l'ancien conteneur de l'application
           sh "docker rm -f ${APP_CONTAINER} || true"
 
+          // Lancer le conteneur de l'application
           sh """
             docker run -d --name ${APP_CONTAINER} \
               --network ${NETWORK} \
