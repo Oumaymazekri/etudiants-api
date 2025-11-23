@@ -11,7 +11,7 @@ pipeline {
 
     IMAGE_NAME     = 'oumaymazekri/etudiants-api'
     IMAGE_TAG      = "v${env.BUILD_NUMBER}"
-    APP_PORT       = "8081"
+    APP_PORT       = "8081"          // Port exposé sur l'hôte
     DB_CONTAINER   = "postgres-etudiants"
     APP_CONTAINER  = "etudiants-api"
     NETWORK        = "etudiants-net"
@@ -28,19 +28,18 @@ pipeline {
     stage('Setup Docker Network & PostgreSQL') {
       steps {
         script {
-          // Crée le réseau si inexistant
+          // Créer le réseau si non existant
           sh "docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}"
-
-          // Supprimer l'ancien conteneur PostgreSQL et volume si nécessaire
+          
+          // Supprimer anciens conteneurs et volumes si existants
           sh "docker rm -f ${DB_CONTAINER} || true"
           sh "docker volume rm ${DB_CONTAINER}-data || true"
-          sh "docker volume create ${DB_CONTAINER}-data"
+          sh "docker volume create ${DB_CONTAINER}-data || true"
 
-          // Lancer PostgreSQL
+          // Lancer PostgreSQL dans le réseau Docker (sans exposer le port sur l'hôte)
           sh """
             docker run -d --name ${DB_CONTAINER} \
               --network ${NETWORK} \
-              -p 5432:5432 \
               -v ${DB_CONTAINER}-data:/var/lib/postgresql/data \
               -e POSTGRES_USER=etudiants \
               -e POSTGRES_PASSWORD=etudiants \
@@ -49,26 +48,26 @@ pipeline {
           """
 
           // Attendre que PostgreSQL soit prêt
-          sh '''
+          sh """
             echo "⏳ Waiting for PostgreSQL to become ready..."
             until docker exec ${DB_CONTAINER} pg_isready -U etudiants -d etudiantsdb; do
               sleep 2
             done
             echo "🔥 PostgreSQL is READY!"
-          '''
+          """
         }
       }
     }
 
     stage('Unit Tests') {
       steps {
-        sh '''
+        sh """
           mvn -B -Dmaven.test.failure.ignore=false \
-            -Dspring.datasource.url=jdbc:postgresql://127.0.0.1:5432/etudiantsdb \
+            -Dspring.datasource.url=jdbc:postgresql://${DB_CONTAINER}:5432/etudiantsdb \
             -Dspring.datasource.username=etudiants \
             -Dspring.datasource.password=etudiants \
             test
-        '''
+        """
       }
     }
 
@@ -101,7 +100,7 @@ pipeline {
     stage('Deployment') {
       steps {
         script {
-          // Supprimer l'ancien conteneur de l'application
+          // Supprimer ancien conteneur si existant
           sh "docker rm -f ${APP_CONTAINER} || true"
 
           // Lancer le conteneur de l'application
