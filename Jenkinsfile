@@ -11,7 +11,7 @@ pipeline {
 
     IMAGE_NAME     = 'oumaymazekri/etudiants-api'
     IMAGE_TAG      = "v${env.BUILD_NUMBER}"
-    APP_PORT       = "8081"
+    APP_PORT       = "8081"          // Port exposé sur l'hôte
     DB_CONTAINER   = "postgres-etudiants"
     APP_CONTAINER  = "etudiants-api"
     NETWORK        = "etudiants-net"
@@ -28,11 +28,8 @@ pipeline {
     stage('Setup Docker Network & PostgreSQL') {
       steps {
         script {
-
           sh "docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}"
-
           sh "docker rm -f ${DB_CONTAINER} || true"
-
           sh "docker volume create ${DB_CONTAINER}-data || true"
 
           sh """
@@ -103,11 +100,11 @@ pipeline {
           sh """
             docker run -d --name ${APP_CONTAINER} \
               --network ${NETWORK} \
-              -p ${APP_PORT}:${APP_PORT} \
+              -p ${APP_PORT}:8080 \
               -e SPRING_DATASOURCE_URL=jdbc:postgresql://${DB_CONTAINER}:5432/etudiantsdb \
               -e SPRING_DATASOURCE_USERNAME=etudiants \
               -e SPRING_DATASOURCE_PASSWORD=etudiants \
-              -e SERVER_PORT=${APP_PORT} \
+              -e SERVER_PORT=8080 \
               ${IMAGE_NAME}:${IMAGE_TAG}
           """
         }
