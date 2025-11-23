@@ -119,17 +119,15 @@ pipeline {
     }
 
     stage('SonarQube Analysis') {
-      steps {
-        withSonarQubeEnv('SonarQube') {
-          withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_AUTH_TOKEN')]) {
-            sh """
-              mvn sonar:sonar \
-                -Dsonar.projectKey=etudiants-api \
-                -Dsonar.host.url=http://198.168.100.71:9000 \
-                -Dsonar.login=$SONAR_AUTH_TOKEN
-            """
-          }
-        }
+  steps {
+    withSonarQubeEnv('SonarQube') {
+      withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_AUTH_TOKEN')]) {
+        sh """
+          mvn sonar:sonar \
+            -Dsonar.projectKey=etudiants-api \
+            -Dsonar.host.url=http://192.168.100.71:9000 \
+            -Dsonar.login=$SONAR_AUTH_TOKEN
+        """
       }
     }
   }
