@@ -11,7 +11,7 @@ pipeline {
 
     IMAGE_NAME     = 'oumaymazekri/etudiants-api'
     IMAGE_TAG      = "v${env.BUILD_NUMBER}"
-    APP_PORT       = "8080"
+    APP_PORT       = "8081"
     DB_CONTAINER   = "postgres-etudiants"
     APP_CONTAINER  = "etudiants-api"
     NETWORK        = "etudiants-net"
