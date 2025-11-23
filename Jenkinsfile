@@ -28,15 +28,11 @@ pipeline {
     stage('Setup Docker Network & PostgreSQL') {
       steps {
         script {
-          // Créer le réseau si non existant
           sh "docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}"
-          
-          // Supprimer anciens conteneurs et volumes si existants
           sh "docker rm -f ${DB_CONTAINER} || true"
           sh "docker volume rm ${DB_CONTAINER}-data || true"
           sh "docker volume create ${DB_CONTAINER}-data || true"
 
-          // Lancer PostgreSQL dans le réseau Docker (sans exposer le port sur l'hôte)
           sh """
             docker run -d --name ${DB_CONTAINER} \
               --network ${NETWORK} \
@@ -47,7 +43,6 @@ pipeline {
               postgres:15
           """
 
-          // Attendre que PostgreSQL soit prêt
           sh """
             echo "⏳ Waiting for PostgreSQL to become ready..."
             until docker exec ${DB_CONTAINER} pg_isready -U etudiants -d etudiantsdb; do
@@ -100,10 +95,8 @@ pipeline {
     stage('Deployment') {
       steps {
         script {
-          // Supprimer ancien conteneur si existant
           sh "docker rm -f ${APP_CONTAINER} || true"
 
-          // Lancer le conteneur de l'application
           sh """
             docker run -d --name ${APP_CONTAINER} \
               --network ${NETWORK} \
@@ -119,18 +112,20 @@ pipeline {
     }
 
     stage('SonarQube Analysis') {
-  steps {
-    withSonarQubeEnv('SonarQube') {
-      withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_AUTH_TOKEN')]) {
-        sh """
-          mvn sonar:sonar \
-            -Dsonar.projectKey=etudiants-api \
-            -Dsonar.host.url=http://192.168.100.71:9000 \
-            -Dsonar.login=$SONAR_AUTH_TOKEN
-        """
+      steps {
+        withSonarQubeEnv('SonarQube') {
+          withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_AUTH_TOKEN')]) {
+            sh """
+              mvn sonar:sonar \
+                -Dsonar.projectKey=etudiants-api \
+                -Dsonar.host.url=http://192.168.100.71:9000 \
+                -Dsonar.login=$SONAR_AUTH_TOKEN
+            """
+          }
+        }
       }
     }
-  } }
+  } // <-- ferme stages
 
   post {
     success {
@@ -165,5 +160,5 @@ JSON
     always {
       archiveArtifacts artifacts: 'reports/*', allowEmptyArchive: true
     }
-  }
-}
+  } // <-- ferme post
+} // <-- ferme pipeline
