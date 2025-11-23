@@ -11,7 +11,7 @@ pipeline {
 
     IMAGE_NAME     = 'oumaymazekri/etudiants-api'
     IMAGE_TAG      = "v${env.BUILD_NUMBER}"
-    APP_PORT       = "8081"          // Port exposé sur l'hôte
+    APP_PORT       = "8081"
     DB_CONTAINER   = "postgres-etudiants"
     APP_CONTAINER  = "etudiants-api"
     NETWORK        = "etudiants-net"
@@ -114,16 +114,16 @@ pipeline {
     stage('SonarQube Analysis') {
       steps {
         withSonarQubeEnv('SonarQube') {
-            sh '''
-              mvn sonar:sonar \
-                -Dsonar.projectKey=etudiants-api \
-                -Dsonar.host.url=http://192.168.100.71:9000 \
-                -Dsonar.login=$SONAR_AUTH_TOKEN
-            '''
-          }
+          sh '''
+            mvn sonar:sonar \
+              -Dsonar.projectKey=etudiants-api \
+              -Dsonar.host.url=$SONAR_HOST_URL \
+              -Dsonar.login=$SONAR_AUTH_TOKEN
+          '''
         }
       }
     }
+
   } // <-- ferme stages
 
   post {
