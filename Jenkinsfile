@@ -2,58 +2,53 @@ pipeline {
   agent any
 
   options {
-    // On garde un checkout explicite uniquement dans notre stage 'Checkout'
     skipDefaultCheckout(true)
   }
 
   environment {
     DOCKER_HUB_CRED = credentials('dockerhub-creds')
-    SONAR_TOKEN     = credentials('sonarqube-token')
+    SONAR_TOKEN     = credentials('sonar-token')
 
-    IMAGE_NAME   = 'azouztarek/student-api'
-    IMAGE_TAG    = "v${env.BUILD_NUMBER}"
-    APP_PORT     = "9090"
-    DB_CONTAINER = "postgres-student"
-    APP_CONTAINER= "student-api"
-    NETWORK      = "student-net"
+    IMAGE_NAME     = 'oumaymazekri/etudiants-api'
+    IMAGE_TAG      = "v${env.BUILD_NUMBER}"
+    APP_PORT       = "8080"
+    DB_CONTAINER   = "postgres-etudiants"
+    APP_CONTAINER  = "etudiants-api"
+    NETWORK        = "etudiants-net"
   }
 
   stages {
 
     stage('Checkout') {
       steps {
-        git branch: 'main', url: 'https://github.com/AzouzTarek/student-api.git'
+        git branch: 'main', url: 'https://github.com/Oumaymazekri/etudiants-api.git'
       }
     }
 
     stage('Setup Docker Network & PostgreSQL') {
       steps {
         script {
-          // Crée le réseau si besoin
+
           sh "docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}"
 
-          // Nettoie l'ancien conteneur si présent
           sh "docker rm -f ${DB_CONTAINER} || true"
 
-          // Volume persistant
           sh "docker volume create ${DB_CONTAINER}-data || true"
 
-          // 👉 IMPORTANT : on expose le port 5432 sur l'hôte pour les tests Maven
           sh """
             docker run -d --name ${DB_CONTAINER} \
               --network ${NETWORK} \
               -p 5432:5432 \
               -v ${DB_CONTAINER}-data:/var/lib/postgresql/data \
-              -e POSTGRES_USER=student \
-              -e POSTGRES_PASSWORD=student \
-              -e POSTGRES_DB=studentdb \
+              -e POSTGRES_USER=etudiants \
+              -e POSTGRES_PASSWORD=etudiants \
+              -e POSTGRES_DB=etudiantsdb \
               postgres:15
           """
 
-          // Attend que Postgres soit prêt (pg_isready)
           sh '''
             echo "⏳ Waiting for PostgreSQL to become ready..."
-            until docker exec postgres-student pg_isready -U student -d studentdb; do
+            until docker exec postgres-etudiants pg_isready -U etudiants -d etudiantsdb; do
               sleep 2
             done
             echo "🔥 PostgreSQL is READY!"
@@ -64,13 +59,11 @@ pipeline {
 
     stage('Unit Tests') {
       steps {
-        // 👉 Les tests tournent sur l'hôte : on vise 127.0.0.1:5432 (port exposé)
         sh '''
-          ./mvnw -B -Dmaven.test.failure.ignore=false \
-            -Dspring.datasource.url=jdbc:postgresql://127.0.0.1:5432/studentdb \
-            -Dspring.datasource.username=student \
-            -Dspring.datasource.password=student \
-            -Dspring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect \
+          mvn -B -Dmaven.test.failure.ignore=false \
+            -Dspring.datasource.url=jdbc:postgresql://127.0.0.1:5432/etudiantsdb \
+            -Dspring.datasource.username=etudiants \
+            -Dspring.datasource.password=etudiants \
             test
         '''
       }
@@ -78,7 +71,7 @@ pipeline {
 
     stage('Build & Docker') {
       steps {
-        sh './mvnw -B clean package -DskipTests'
+        sh 'mvn -B clean package -DskipTests'
         sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
 
         withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
@@ -107,14 +100,13 @@ pipeline {
         script {
           sh "docker rm -f ${APP_CONTAINER} || true"
 
-          // 👉 Ici on reste dans le réseau Docker : on peut utiliser le host 'postgres-student'
           sh """
             docker run -d --name ${APP_CONTAINER} \
               --network ${NETWORK} \
               -p ${APP_PORT}:${APP_PORT} \
-              -e SPRING_DATASOURCE_URL=jdbc:postgresql://${DB_CONTAINER}:5432/studentdb \
-              -e SPRING_DATASOURCE_USERNAME=student \
-              -e SPRING_DATASOURCE_PASSWORD=student \
+              -e SPRING_DATASOURCE_URL=jdbc:postgresql://${DB_CONTAINER}:5432/etudiantsdb \
+              -e SPRING_DATASOURCE_USERNAME=etudiants \
+              -e SPRING_DATASOURCE_PASSWORD=etudiants \
               -e SERVER_PORT=${APP_PORT} \
               ${IMAGE_NAME}:${IMAGE_TAG}
           """
@@ -125,18 +117,18 @@ pipeline {
     stage('SonarQube Analysis') {
       steps {
         withSonarQubeEnv('SonarQube') {
-          withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_AUTH_TOKEN')]) {
+          withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_AUTH_TOKEN')]) {
             sh """
-              ./mvnw sonar:sonar \
-                -Dsonar.projectKey=StudentAPI \
-                -Dsonar.host.url=$SONAR_HOST_URL \
+              mvn sonar:sonar \
+                -Dsonar.projectKey=etudiants-api \
+                -Dsonar.host.url=http://198.168.100.71:9000 \
                 -Dsonar.login=$SONAR_AUTH_TOKEN
             """
           }
         }
       }
     }
-  } // stages
+  }
 
   post {
     success {
@@ -145,7 +137,7 @@ pipeline {
           curl --fail-with-body -sS -X POST -H 'Content-type: application/json' \
           --data @- "$SLACK" <<'JSON'
           {
-            "text": "✅ Pipeline SUCCESS - Job: ${JOB_NAME} #${BUILD_NUMBER} - Image deployed on port ${APP_PORT}"
+            "text": "✅ SUCCESS - Pipeline job ${JOB_NAME} #${BUILD_NUMBER} déployé sur port ${APP_PORT}"
           }
 JSON
         """
@@ -156,12 +148,11 @@ JSON
     failure {
       sh "docker logs ${DB_CONTAINER} || true"
       withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK')]) {
-        // Warning d'interpolation de secret attendu, non bloquant
         sh """
           curl --fail-with-body -sS -X POST -H 'Content-type: application/json' \
           --data @- "$SLACK" <<'JSON'
           {
-            "text": "❌ Pipeline FAILED - Job: ${JOB_NAME} #${BUILD_NUMBER}"
+            "text": "❌ FAILURE - Pipeline job ${JOB_NAME} #${BUILD_NUMBER}"
           }
 JSON
         """
